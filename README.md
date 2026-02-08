@@ -26,3 +26,49 @@ Very happy, especially testing the UI with Playwright MCP as I am still testing 
 ## What would be the first thing to improve?
 
 Error handling, retry, and resilience. Also guardrails for prompt injection attacks and abusing the chatbot.
+
+## How to Run
+
+### Prerequisites
+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) package manager
+- An [OpenRouter](https://openrouter.ai/keys) API key
+
+### Setup
+
+```bash
+# Clone the repo
+git clone git@github.com:TheJproject/weather-chatbot.git
+cd weather-chatbot
+
+# Install dependencies
+uv sync
+
+# Create a .env file with your API key
+echo 'OPENROUTER_API_KEY=sk-or-...' > .env
+echo 'OPENROUTER_MODEL=google/gemini-3-flash-preview' >> .env
+```
+
+### Run the Web UI
+
+```bash
+uvicorn src.web:app --host 127.0.0.1 --port 7932
+```
+
+Then open http://127.0.0.1:7932 in your browser.
+
+### Run Tests
+
+```bash
+uv run pytest tests/ -v
+```
+
+### Linting
+
+```bash
+black src/ tests/ --line-length=120
+isort src/ tests/ --profile black --line-length=120
+ruff check src/ tests/
+uvx ty check src/ tests/
+```
