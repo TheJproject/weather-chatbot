@@ -10,6 +10,7 @@ from pydantic_ai.models.test import TestModel
 
 from src.agent import agent, guard_agent
 from src.deps import WeatherDeps
+from src.web import build_refusal_sse, extract_last_user_text
 
 
 def _mock_deps() -> WeatherDeps:
@@ -84,14 +85,6 @@ class TestAgentConfiguration:
         """
         assert agent._max_tool_retries == 2
 
-    def test_agent_has_output_validator(self):
-        """Agent has an output validator registered for weather topic enforcement.
-
-        Implementation: Inspects the agent's output validators list.
-        Passing implies: The guard agent output validator is registered.
-        """
-        assert len(agent._output_validators) >= 1
-
     def test_system_prompt_includes_topic_restriction(self):
         """System prompt instructs the agent to only answer weather questions.
 
@@ -117,14 +110,7 @@ class TestAgentConfiguration:
         Implementation: Inspects the guard agent's output type.
         Passing implies: The guard agent is configured to return structured classification.
         """
-
-        # The guard agent has output_type=TopicCheck
         assert guard_agent._output_schema is not None
-
-
-# TestModel override for the guard agent that approves weather responses
-_guard_approve = TestModel(custom_output_args={"is_weather_related": True, "reason": "weather content"})
-_guard_reject = TestModel(custom_output_args={"is_weather_related": False, "reason": "off-topic content"})
 
 
 class TestAgentExecution:
@@ -132,41 +118,86 @@ class TestAgentExecution:
     async def test_agent_runs_with_test_model(self):
         """Agent executes without errors using TestModel.
 
-        Implementation: Runs the agent with TestModel and mock deps, guard agent approves output.
+        Implementation: Runs the agent with TestModel and mock deps.
         Passing implies: Tool chain (geocode + forecast) works end-to-end with mocked HTTP.
         """
         deps = _mock_deps()
-        # Override both the main agent and the guard agent
         with agent.override(model=TestModel(call_tools=["get_location_coordinates", "get_weather_forecast"])):
-            with guard_agent.override(model=_guard_approve):
-                result = await agent.run("What is the weather in Copenhagen?", deps=deps)
-                assert result.output is not None
+            result = await agent.run("What is the weather in Copenhagen?", deps=deps)
+            assert result.output is not None
 
     @pytest.mark.asyncio
     async def test_historical_tool_handles_bad_dates(self):
         """Historical tool raises ModelRetry for invalid dates instead of crashing.
 
         Implementation: Runs agent with TestModel calling historical tool. TestModel passes
-        placeholder 'a' for date strings, which triggers ValueError → ModelRetry.
+        placeholder 'a' for date strings, which triggers ValueError -> ModelRetry.
         After max retries, raises UnexpectedModelBehavior (not raw ValueError).
         Passing implies: Bad date inputs are wrapped in ModelRetry for graceful retry handling.
         """
         deps = _mock_deps()
         with agent.override(model=TestModel(call_tools=["get_historical_weather_data"])):
-            with guard_agent.override(model=_guard_approve):
-                with pytest.raises(UnexpectedModelBehavior, match="get_historical_weather_data"):
-                    await agent.run("What was the weather last year?", deps=deps)
+            with pytest.raises(UnexpectedModelBehavior, match="get_historical_weather_data"):
+                await agent.run("What was the weather last year?", deps=deps)
 
-    @pytest.mark.asyncio
-    async def test_output_validator_rejects_off_topic(self):
-        """Output validator rejects responses when guard agent classifies them as off-topic.
 
-        Implementation: Runs agent with guard agent set to reject. After retries exhaust,
-        raises UnexpectedModelBehavior.
-        Passing implies: The guard agent output validator enforces topic boundaries.
+class TestInputGuard:
+    def test_extract_user_text_from_chat_request(self):
+        """extract_last_user_text parses the last user message from Vercel AI protocol.
+
+        Implementation: Passes a realistic Vercel AI chat request body.
+        Passing implies: The function correctly extracts user text from the protocol format.
         """
-        deps = _mock_deps()
-        with agent.override(model=TestModel(call_tools=[])):
-            with guard_agent.override(model=_guard_reject):
-                with pytest.raises(UnexpectedModelBehavior):
-                    await agent.run("What is the capital of France?", deps=deps)
+        body = b'{"messages":[{"role":"user","parts":[{"type":"text","text":"Hello weather"}]}]}'
+        assert extract_last_user_text(body) == "Hello weather"
+
+    def test_extract_user_text_returns_last_message(self):
+        """extract_last_user_text returns the most recent user message.
+
+        Implementation: Passes a multi-message conversation.
+        Passing implies: The function finds the last user message, not the first.
+        """
+        body = b'{"messages":[{"role":"user","parts":[{"type":"text","text":"first"}]},{"role":"assistant","parts":[{"type":"text","text":"reply"}]},{"role":"user","parts":[{"type":"text","text":"second"}]}]}'
+        assert extract_last_user_text(body) == "second"
+
+    def test_extract_user_text_returns_none_for_invalid_json(self):
+        """extract_last_user_text returns None for malformed input.
+
+        Implementation: Passes invalid JSON.
+        Passing implies: The function handles parse errors gracefully.
+        """
+        assert extract_last_user_text(b"not json") is None
+
+    def test_extract_user_text_returns_none_for_no_messages(self):
+        """extract_last_user_text returns None when no user messages exist.
+
+        Implementation: Passes a request with no messages.
+        Passing implies: The function handles missing data gracefully.
+        """
+        assert extract_last_user_text(b'{"messages":[]}') is None
+
+    def test_build_refusal_sse_contains_text(self):
+        """build_refusal_sse produces a valid SSE response with the refusal text.
+
+        Implementation: Checks the SSE response body for required protocol events.
+        Passing implies: The canned response follows the Vercel AI Data Stream Protocol.
+        """
+        result = build_refusal_sse("Sorry, weather only!")
+        text = result.decode()
+        assert "text-start" in text
+        assert "text-delta" in text
+        assert "Sorry, weather only!" in text
+        assert "text-end" in text
+        assert "finish-step" in text
+        assert "[DONE]" in text
+
+    def test_build_refusal_sse_is_valid_sse_format(self):
+        """build_refusal_sse produces properly formatted SSE events.
+
+        Implementation: Checks that each event starts with 'data: ' and ends with double newlines.
+        Passing implies: The response is parseable by SSE clients.
+        """
+        result = build_refusal_sse("test")
+        text = result.decode()
+        for line in text.strip().split("\n\n"):
+            assert line.startswith("data: ")

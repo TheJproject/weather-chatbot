@@ -6,7 +6,7 @@ from datetime import date
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
@@ -78,19 +78,6 @@ def add_current_date(ctx: RunContext[WeatherDeps]) -> str:
     """Inject the current date so the LLM knows what 'today' and 'tomorrow' mean."""
     today = date.today()
     return f"Today's date is {today.isoformat()} ({today.strftime('%A')})."
-
-
-@agent.output_validator
-async def validate_weather_topic(ctx: RunContext[WeatherDeps], data: str) -> str:
-    """Use the guard agent to reject responses not about weather/climate."""
-    result = await guard_agent.run(f"Is this response about weather/climate?\n\n{data}")
-    if result.output.is_weather_related:
-        return data
-    raise ModelRetry(
-        f"Your response is off-topic ({result.output.reason}). "
-        "You must only answer weather and climate questions. "
-        "If the user asked about something else, politely decline and suggest a weather question."
-    )
 
 
 # Import tools module to register @agent.tool decorators

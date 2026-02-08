@@ -74,9 +74,8 @@ The LLM produces well-formatted responses with tables, bullet points, and contex
 1. **Retry logic with backoff** -- Tenacity-based `AsyncTenacityTransport` wraps the httpx client with exponential backoff for transient network errors (connection refused, timeouts, 429/5xx). Pydantic AI's `ModelRetry` provides tool-level retries with `retries=2`.
 2. **Graceful error messages** -- All three tools catch `httpx.HTTPError` and `ValueError` and raise `ModelRetry` with descriptive messages, letting the LLM retry or relay the error to the user.
 3. **Model selection** -- Web UI dropdown lets users choose between Minimax M2.1, Ministral 14B, Claude Haiku 4.5, and the default model via `to_web(models={...})`.
-4. **Guardrails** -- System prompt rules 10-12 enforce weather-only topics and refuse prompt injection attempts.
+4. **Guardrails** -- Two-layer defense: an ASGI input guard middleware runs the guard agent (Claude Haiku) on every user message *before* the main agent sees it, returning an instant refusal for off-topic queries. System prompt rules 10-12 provide a secondary defense inside the agent itself. This input-validation approach avoids the streaming protocol issues that output validators cause in the Pydantic AI web UI.
 
 **Remaining improvements:**
 
 - **Caching** geocoding results and recent forecasts to reduce API calls and improve response time.
-- **Streaming responses** so the user sees the answer being built in real-time rather than waiting for all tool calls to complete.
