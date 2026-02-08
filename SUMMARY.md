@@ -63,7 +63,7 @@ The `@agent.instructions` decorator injects today's date into the system prompt 
 
 ## How Happy Am I With the Outcome?
 
-Very happy. All four example questions from the task are answered correctly with real data. The architecture is clean and each layer has a clear responsibility. The test suite (21 tests) gives confidence that refactoring won't break anything. The web UI works out of the box with `agent.to_web()`, which saved significant time that would have been spent on frontend work.
+Very happy. All four example questions from the task are answered correctly with real data. The architecture is clean and each layer has a clear responsibility. The test suite (32 tests) gives confidence that refactoring won't break anything. The web UI works out of the box with `agent.to_web()`, which saved significant time that would have been spent on frontend work.
 
 The LLM produces well-formatted responses with tables, bullet points, and contextual analysis -- not just raw numbers. It correctly chains tools (geocode first, then data retrieval) without explicit orchestration code.
 

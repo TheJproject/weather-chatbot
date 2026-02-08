@@ -80,5 +80,6 @@ def add_current_date(ctx: RunContext[WeatherDeps]) -> str:
     return f"Today's date is {today.isoformat()} ({today.strftime('%A')})."
 
 
-# Import tools module to register @agent.tool decorators
+# Import tools module to register @agent.tool decorators.
+# Must be at the bottom because src.tools imports `agent` from this module.
 import src.tools  # noqa: E402, F401
