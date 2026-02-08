@@ -8,7 +8,7 @@ import pytest
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models.test import TestModel
 
-from src.agent import agent
+from src.agent import agent, guard_agent
 from src.deps import WeatherDeps
 
 
@@ -84,6 +84,14 @@ class TestAgentConfiguration:
         """
         assert agent._max_tool_retries == 2
 
+    def test_agent_has_output_validator(self):
+        """Agent has an output validator registered for weather topic enforcement.
+
+        Implementation: Inspects the agent's output validators list.
+        Passing implies: The guard agent output validator is registered.
+        """
+        assert len(agent._output_validators) >= 1
+
     def test_system_prompt_includes_topic_restriction(self):
         """System prompt instructs the agent to only answer weather questions.
 
@@ -103,20 +111,36 @@ class TestAgentConfiguration:
         assert "prompt injection" in prompt_text
         assert "ignore your system prompt" in prompt_text
 
+    def test_guard_agent_uses_structured_output(self):
+        """Guard agent returns TopicCheck with is_weather_related and reason fields.
+
+        Implementation: Inspects the guard agent's output type.
+        Passing implies: The guard agent is configured to return structured classification.
+        """
+
+        # The guard agent has output_type=TopicCheck
+        assert guard_agent._output_schema is not None
+
+
+# TestModel override for the guard agent that approves weather responses
+_guard_approve = TestModel(custom_output_args={"is_weather_related": True, "reason": "weather content"})
+_guard_reject = TestModel(custom_output_args={"is_weather_related": False, "reason": "off-topic content"})
+
 
 class TestAgentExecution:
     @pytest.mark.asyncio
     async def test_agent_runs_with_test_model(self):
         """Agent executes without errors using TestModel.
 
-        Implementation: Runs the agent with TestModel and mock deps.
+        Implementation: Runs the agent with TestModel and mock deps, guard agent approves output.
         Passing implies: Tool chain (geocode + forecast) works end-to-end with mocked HTTP.
         """
         deps = _mock_deps()
-        # Limit to geocode + forecast tools; historical needs valid ISO dates that TestModel can't generate
+        # Override both the main agent and the guard agent
         with agent.override(model=TestModel(call_tools=["get_location_coordinates", "get_weather_forecast"])):
-            result = await agent.run("What is the weather in Copenhagen?", deps=deps)
-            assert result.output is not None
+            with guard_agent.override(model=_guard_approve):
+                result = await agent.run("What is the weather in Copenhagen?", deps=deps)
+                assert result.output is not None
 
     @pytest.mark.asyncio
     async def test_historical_tool_handles_bad_dates(self):
@@ -129,5 +153,20 @@ class TestAgentExecution:
         """
         deps = _mock_deps()
         with agent.override(model=TestModel(call_tools=["get_historical_weather_data"])):
-            with pytest.raises(UnexpectedModelBehavior, match="get_historical_weather_data"):
-                await agent.run("What was the weather last year?", deps=deps)
+            with guard_agent.override(model=_guard_approve):
+                with pytest.raises(UnexpectedModelBehavior, match="get_historical_weather_data"):
+                    await agent.run("What was the weather last year?", deps=deps)
+
+    @pytest.mark.asyncio
+    async def test_output_validator_rejects_off_topic(self):
+        """Output validator rejects responses when guard agent classifies them as off-topic.
+
+        Implementation: Runs agent with guard agent set to reject. After retries exhaust,
+        raises UnexpectedModelBehavior.
+        Passing implies: The guard agent output validator enforces topic boundaries.
+        """
+        deps = _mock_deps()
+        with agent.override(model=TestModel(call_tools=[])):
+            with guard_agent.override(model=_guard_reject):
+                with pytest.raises(UnexpectedModelBehavior):
+                    await agent.run("What is the capital of France?", deps=deps)
