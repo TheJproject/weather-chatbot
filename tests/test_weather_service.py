@@ -170,8 +170,7 @@ class TestGetForecast:
         client = _mock_client({"latitude": 0, "longitude": 0, "timezone": "UTC", "daily": {}, "hourly": {}})
         await get_forecast(client, 55.68, 12.57, "Europe/Copenhagen", forecast_days=3)
 
-        call_kwargs = client.get.call_args
-        params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params")
+        params = client.get.call_args.kwargs["params"]
         assert params["latitude"] == 55.68
         assert params["longitude"] == 12.57
         assert params["timezone"] == "Europe/Copenhagen"
@@ -217,7 +216,6 @@ class TestGetHistoricalWeather:
         client = _mock_client({"latitude": 0, "longitude": 0, "timezone": "UTC", "daily": {}, "hourly": {}})
         await get_historical_weather(client, 55.68, 12.57, "Europe/Copenhagen", date(2024, 1, 1), date(2024, 1, 31))
 
-        call_kwargs = client.get.call_args
-        params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params")
+        params = client.get.call_args.kwargs["params"]
         assert params["start_date"] == "2024-01-01"
         assert params["end_date"] == "2024-01-31"

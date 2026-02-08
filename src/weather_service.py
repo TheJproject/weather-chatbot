@@ -60,15 +60,7 @@ async def get_forecast(
         },
     )
     resp.raise_for_status()
-    data = resp.json()
-
-    return WeatherResponse(
-        latitude=data["latitude"],
-        longitude=data["longitude"],
-        timezone=data.get("timezone", timezone),
-        daily=parse_daily_data(data.get("daily", {})),
-        hourly=parse_hourly_data(data.get("hourly", {})),
-    )
+    return _build_weather_response(resp.json(), timezone)
 
 
 async def get_historical_weather(
@@ -93,12 +85,15 @@ async def get_historical_weather(
         },
     )
     resp.raise_for_status()
-    data = resp.json()
+    return _build_weather_response(resp.json(), timezone)
 
+
+def _build_weather_response(data: dict, fallback_timezone: str) -> WeatherResponse:
+    """Build a WeatherResponse from raw Open-Meteo JSON, shared by forecast and historical."""
     return WeatherResponse(
         latitude=data["latitude"],
         longitude=data["longitude"],
-        timezone=data.get("timezone", timezone),
+        timezone=data.get("timezone", fallback_timezone),
         daily=parse_daily_data(data.get("daily", {})),
         hourly=parse_hourly_data(data.get("hourly", {})),
     )
@@ -110,23 +105,21 @@ def parse_daily_data(raw: dict) -> list[DailyWeather]:
     if not dates:
         return []
 
-    result = []
-    for i, d in enumerate(dates):
-        result.append(
-            DailyWeather(
-                date=date.fromisoformat(d),
-                temperature_2m_max=_get_at(raw, "temperature_2m_max", i),
-                temperature_2m_min=_get_at(raw, "temperature_2m_min", i),
-                sunrise=_get_at(raw, "sunrise", i),
-                sunset=_get_at(raw, "sunset", i),
-                sunshine_duration=_get_at(raw, "sunshine_duration", i),
-                daylight_duration=_get_at(raw, "daylight_duration", i),
-                wind_speed_10m_max=_get_at(raw, "wind_speed_10m_max", i),
-                precipitation_sum=_get_at(raw, "precipitation_sum", i),
-                weather_code=_get_at(raw, "weather_code", i),
-            )
+    return [
+        DailyWeather(
+            date=date.fromisoformat(d),
+            temperature_2m_max=_get_at(raw, "temperature_2m_max", i),
+            temperature_2m_min=_get_at(raw, "temperature_2m_min", i),
+            sunrise=_get_at(raw, "sunrise", i),
+            sunset=_get_at(raw, "sunset", i),
+            sunshine_duration=_get_at(raw, "sunshine_duration", i),
+            daylight_duration=_get_at(raw, "daylight_duration", i),
+            wind_speed_10m_max=_get_at(raw, "wind_speed_10m_max", i),
+            precipitation_sum=_get_at(raw, "precipitation_sum", i),
+            weather_code=_get_at(raw, "weather_code", i),
         )
-    return result
+        for i, d in enumerate(dates)
+    ]
 
 
 def parse_hourly_data(raw: dict) -> list[HourlyWeather]:
@@ -135,19 +128,17 @@ def parse_hourly_data(raw: dict) -> list[HourlyWeather]:
     if not times:
         return []
 
-    result = []
-    for i, t in enumerate(times):
-        result.append(
-            HourlyWeather(
-                time=datetime.fromisoformat(t),
-                temperature_2m=_get_at(raw, "temperature_2m", i),
-                wind_speed_10m=_get_at(raw, "wind_speed_10m", i),
-                precipitation=_get_at(raw, "precipitation", i),
-                weather_code=_get_at(raw, "weather_code", i),
-                is_day=_get_at(raw, "is_day", i),
-            )
+    return [
+        HourlyWeather(
+            time=datetime.fromisoformat(t),
+            temperature_2m=_get_at(raw, "temperature_2m", i),
+            wind_speed_10m=_get_at(raw, "wind_speed_10m", i),
+            precipitation=_get_at(raw, "precipitation", i),
+            weather_code=_get_at(raw, "weather_code", i),
+            is_day=_get_at(raw, "is_day", i),
         )
-    return result
+        for i, t in enumerate(times)
+    ]
 
 
 def _get_at(data: dict, key: str, index: int):
