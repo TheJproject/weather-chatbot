@@ -1,5 +1,7 @@
 # Weather & Climate AI Chatbot
 
+**Live Demo:** https://weather-chatbot-production.up.railway.app
+
 ## Can you explain your thought process when working on this and decisions that you made?
 
 From the task description we have to do a chatbot with tool calling to get info on the weather, but also open enough such that it can answer different type of question using the weather context.

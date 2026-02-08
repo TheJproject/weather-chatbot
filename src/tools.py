@@ -3,7 +3,8 @@
 
 from datetime import date
 
-from pydantic_ai import RunContext
+import httpx
+from pydantic_ai import ModelRetry, RunContext
 
 from src.agent import agent
 from src.deps import WeatherDeps
@@ -20,7 +21,10 @@ async def get_location_coordinates(ctx: RunContext[WeatherDeps], city_name: str)
         ctx: Agent run context with HTTP client.
         city_name: Name of the city to geocode (e.g. "Copenhagen", "London").
     """
-    result = await geocode(ctx.deps.http_client, city_name)
+    try:
+        result = await geocode(ctx.deps.http_client, city_name)
+    except httpx.HTTPError as e:
+        raise ModelRetry(f"Geocoding API failed for '{city_name}': {e}") from e
     if result is None:
         return {"error": f"Could not find location: {city_name}"}
     return result.model_dump()
@@ -45,7 +49,10 @@ async def get_weather_forecast(
         timezone: Location timezone from geocoding (e.g. "Europe/Copenhagen").
         forecast_days: Number of days to forecast (1-16, default 7).
     """
-    result = await get_forecast(ctx.deps.http_client, latitude, longitude, timezone, forecast_days)
+    try:
+        result = await get_forecast(ctx.deps.http_client, latitude, longitude, timezone, forecast_days)
+    except httpx.HTTPError as e:
+        raise ModelRetry(f"Forecast API failed: {e}") from e
     return result.model_dump(mode="json")
 
 
@@ -70,7 +77,13 @@ async def get_historical_weather_data(
         start_date: Start date in ISO format (YYYY-MM-DD).
         end_date: End date in ISO format (YYYY-MM-DD).
     """
-    start = date.fromisoformat(start_date)
-    end = date.fromisoformat(end_date)
-    result = await get_historical_weather(ctx.deps.http_client, latitude, longitude, timezone, start, end)
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError as e:
+        raise ModelRetry(f"Invalid date format, use YYYY-MM-DD: {e}") from e
+    try:
+        result = await get_historical_weather(ctx.deps.http_client, latitude, longitude, timezone, start, end)
+    except httpx.HTTPError as e:
+        raise ModelRetry(f"Historical weather API failed: {e}") from e
     return result.model_dump(mode="json")

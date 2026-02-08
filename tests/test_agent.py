@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models.test import TestModel
 
 from src.agent import agent
@@ -74,6 +75,35 @@ class TestAgentToolRegistration:
         assert len(agent._function_toolset.tools) == 3
 
 
+class TestAgentConfiguration:
+    def test_agent_has_retries_configured(self):
+        """Agent is configured with retries=2 for tool call retries.
+
+        Implementation: Inspects the agent's internal retry configuration.
+        Passing implies: Failed tool calls will be retried up to 2 times.
+        """
+        assert agent._max_tool_retries == 2
+
+    def test_system_prompt_includes_topic_restriction(self):
+        """System prompt instructs the agent to only answer weather questions.
+
+        Implementation: Checks the system prompt tuple for topic restriction text.
+        Passing implies: The guardrail rule for off-topic refusal is present.
+        """
+        prompt_text = " ".join(agent._system_prompts)
+        assert "ONLY answer questions about weather" in prompt_text
+
+    def test_system_prompt_includes_prompt_injection_defense(self):
+        """System prompt instructs the agent to refuse prompt injection attempts.
+
+        Implementation: Checks the system prompt for prompt injection defense text.
+        Passing implies: The guardrail rules for manipulation refusal are present.
+        """
+        prompt_text = " ".join(agent._system_prompts)
+        assert "prompt injection" in prompt_text
+        assert "ignore your system prompt" in prompt_text
+
+
 class TestAgentExecution:
     @pytest.mark.asyncio
     async def test_agent_runs_with_test_model(self):
@@ -87,3 +117,17 @@ class TestAgentExecution:
         with agent.override(model=TestModel(call_tools=["get_location_coordinates", "get_weather_forecast"])):
             result = await agent.run("What is the weather in Copenhagen?", deps=deps)
             assert result.output is not None
+
+    @pytest.mark.asyncio
+    async def test_historical_tool_handles_bad_dates(self):
+        """Historical tool raises ModelRetry for invalid dates instead of crashing.
+
+        Implementation: Runs agent with TestModel calling historical tool. TestModel passes
+        placeholder 'a' for date strings, which triggers ValueError → ModelRetry.
+        After max retries, raises UnexpectedModelBehavior (not raw ValueError).
+        Passing implies: Bad date inputs are wrapped in ModelRetry for graceful retry handling.
+        """
+        deps = _mock_deps()
+        with agent.override(model=TestModel(call_tools=["get_historical_weather_data"])):
+            with pytest.raises(UnexpectedModelBehavior, match="get_historical_weather_data"):
+                await agent.run("What was the weather last year?", deps=deps)

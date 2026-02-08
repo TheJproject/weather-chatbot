@@ -69,14 +69,14 @@ The LLM produces well-formatted responses with tables, bullet points, and contex
 
 ## What Would Be the First Thing to Improve?
 
-**Error handling and resilience.** Currently, if an Open-Meteo API call fails or returns unexpected data, the error propagates to the user as a raw exception. The first improvement would be:
+**Done -- implemented in the second iteration:**
 
-1. **Retry logic with backoff** for transient API failures (network timeouts, rate limits).
-2. **Graceful error messages** in tools -- catch exceptions and return user-friendly error dicts instead of letting them bubble up.
-3. **Input validation in tools** -- validate date ranges, coordinate bounds, and city names before making API calls, so the LLM gets a clear error message it can relay to the user.
+1. **Retry logic with backoff** -- Tenacity-based `AsyncTenacityTransport` wraps the httpx client with exponential backoff for transient network errors (connection refused, timeouts, 429/5xx). Pydantic AI's `ModelRetry` provides tool-level retries with `retries=2`.
+2. **Graceful error messages** -- All three tools catch `httpx.HTTPError` and `ValueError` and raise `ModelRetry` with descriptive messages, letting the LLM retry or relay the error to the user.
+3. **Model selection** -- Web UI dropdown lets users choose between Minimax M2.1, Ministral 14B, Claude Haiku 4.5, and the default model via `to_web(models={...})`.
+4. **Guardrails** -- System prompt rules 10-12 enforce weather-only topics and refuse prompt injection attempts.
 
-Other improvements I would consider after that:
+**Remaining improvements:**
 
 - **Caching** geocoding results and recent forecasts to reduce API calls and improve response time.
 - **Streaming responses** so the user sees the answer being built in real-time rather than waiting for all tool calls to complete.
-- **More robust model selection** -- the Gemini Flash model via OpenRouter occasionally has issues with its "Thought" feature. A fallback model configuration would improve reliability.
