@@ -33,3 +33,10 @@ line-length = 120
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[[tool.ty.overrides]]
+include = ["tests/**"]
+
+[tool.ty.overrides.rules]
+invalid-assignment = "ignore"     # ALLOW_MODEL_REQUESTS = False is standard pydantic-ai testing pattern
+unresolved-attribute = "ignore"   # AsyncMock adds .call_args/.side_effect not visible to static analysis
